@@ -60,9 +60,9 @@ def mock_addon_options(addon_info):
 
 
 @pytest.fixture(name="set_addon_options_side_effect")
-def set_addon_options_side_effect_fixture():
+def set_addon_options_side_effect_fixture(addon_options):
     """Return the set add-on options side effect."""
-    return None
+    return lambda hass, slug, options: addon_options.update(options["options"])
 
 
 @pytest.fixture(name="set_addon_options")
@@ -95,7 +95,7 @@ def mock_update_addon():
 
 @pytest.fixture(name="start_addon_side_effect")
 def start_addon_side_effect_fixture():
-    """Return the set add-on options side effect."""
+    """Return the start add-on options side effect."""
     return None
 
 
@@ -116,6 +116,22 @@ def stop_addon_fixture():
         "homeassistant.components.zwave_js.addon.async_stop_addon"
     ) as stop_addon:
         yield stop_addon
+
+
+@pytest.fixture(name="restart_addon_side_effect")
+def restart_addon_side_effect_fixture():
+    """Return the restart add-on options side effect."""
+    return None
+
+
+@pytest.fixture(name="restart_addon")
+def mock_restart_addon(restart_addon_side_effect):
+    """Mock restart add-on."""
+    with patch(
+        "homeassistant.components.zwave_js.addon.async_restart_addon",
+        side_effect=restart_addon_side_effect,
+    ) as restart_addon:
+        yield restart_addon
 
 
 @pytest.fixture(name="uninstall_addon")

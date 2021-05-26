@@ -1163,3 +1163,80 @@ async def test_options_not_addon(hass, client, supervisor, integration):
     assert entry.data["integration_created_addon"] is False
     assert client.connect.call_count == 2
     assert client.disconnect.call_count == 1
+
+
+@pytest.mark.parametrize("discovery_info", [{"config": ADDON_DISCOVERY_INFO}])
+async def test_options_addon_running(
+    hass,
+    client,
+    supervisor,
+    integration,
+    addon_running,
+    addon_options,
+    set_addon_options,
+    restart_addon,
+    get_addon_discovery_info,
+):
+    """Test options flow and add-on already running on Supervisor."""
+    addon_options["device"] = "/test"
+    addon_options["network_key"] = "abc123"
+    entry = integration
+    entry.unique_id = 1234
+
+    assert entry.data["url"] == "ws://test.org"
+
+    assert client.connect.call_count == 1
+    assert client.disconnect.call_count == 0
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "on_supervisor"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"use_addon": True}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "configure_addon"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "usb_path": "/new",
+            "network_key": "new123",
+            "log_level": "info",
+            "emulate_hardware": False,
+        },
+    )
+
+    assert set_addon_options.call_args == call(
+        hass,
+        "core_zwave_js",
+        {
+            "options": {
+                "device": "/new",
+                "network_key": "new123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            }
+        },
+    )
+
+    assert result["type"] == "progress"
+    assert result["step_id"] == "start_addon"
+
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_configure(result["flow_id"])
+    await hass.async_block_till_done()
+
+    assert restart_addon.call_args == call(hass, "core_zwave_js")
+
+    assert result["type"] == "create_entry"
+    assert entry.data["url"] == "ws://host1:3001"
+    assert entry.data["usb_path"] == "/new"
+    assert entry.data["network_key"] == "new123"
+    assert entry.data["use_addon"] is True
+    assert entry.data["integration_created_addon"] is False
+    assert client.connect.call_count == 2
+    assert client.disconnect.call_count == 1
