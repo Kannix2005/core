@@ -1165,7 +1165,13 @@ async def test_options_not_addon(hass, client, supervisor, integration):
     assert client.disconnect.call_count == 1
 
 
-@pytest.mark.parametrize("discovery_info", [{"config": ADDON_DISCOVERY_INFO}])
+@pytest.mark.parametrize(
+    "discovery_info, entry_data, disconnect_calls",
+    [
+        ({"config": ADDON_DISCOVERY_INFO}, {}, 0),
+        ({"config": ADDON_DISCOVERY_INFO}, {"use_addon": True}, 1),
+    ],
+)
 async def test_options_addon_running(
     hass,
     client,
@@ -1176,12 +1182,17 @@ async def test_options_addon_running(
     set_addon_options,
     restart_addon,
     get_addon_discovery_info,
+    discovery_info,
+    entry_data,
+    disconnect_calls,
 ):
     """Test options flow and add-on already running on Supervisor."""
     addon_options["device"] = "/test"
     addon_options["network_key"] = "abc123"
     entry = integration
     entry.unique_id = 1234
+    data = {**entry.data, **entry_data}
+    hass.config_entries.async_update_entry(entry, data=data)
 
     assert entry.data["url"] == "ws://test.org"
 
@@ -1222,6 +1233,7 @@ async def test_options_addon_running(
             }
         },
     )
+    assert client.disconnect.call_count == disconnect_calls
 
     assert result["type"] == "progress"
     assert result["step_id"] == "start_addon"
