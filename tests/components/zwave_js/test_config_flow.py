@@ -1166,10 +1166,32 @@ async def test_options_not_addon(hass, client, supervisor, integration):
 
 
 @pytest.mark.parametrize(
-    "discovery_info, entry_data, disconnect_calls",
+    "discovery_info, entry_data, old_addon_options, new_addon_options, disconnect_calls",
     [
-        ({"config": ADDON_DISCOVERY_INFO}, {}, 0),
-        ({"config": ADDON_DISCOVERY_INFO}, {"use_addon": True}, 1),
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {},
+            {"device": "/test", "network_key": "abc123"},
+            {
+                "usb_path": "/new",
+                "network_key": "new123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            0,
+        ),
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {"use_addon": True},
+            {"device": "/test", "network_key": "abc123"},
+            {
+                "usb_path": "/new",
+                "network_key": "new123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            1,
+        ),
     ],
 )
 async def test_options_addon_running(
@@ -1184,11 +1206,12 @@ async def test_options_addon_running(
     get_addon_discovery_info,
     discovery_info,
     entry_data,
+    old_addon_options,
+    new_addon_options,
     disconnect_calls,
 ):
     """Test options flow and add-on already running on Supervisor."""
-    addon_options["device"] = "/test"
-    addon_options["network_key"] = "abc123"
+    addon_options.update(old_addon_options)
     entry = integration
     entry.unique_id = 1234
     data = {**entry.data, **entry_data}
@@ -1213,25 +1236,14 @@ async def test_options_addon_running(
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {
-            "usb_path": "/new",
-            "network_key": "new123",
-            "log_level": "info",
-            "emulate_hardware": False,
-        },
+        new_addon_options,
     )
 
+    new_addon_options["device"] = new_addon_options.pop("usb_path")
     assert set_addon_options.call_args == call(
         hass,
         "core_zwave_js",
-        {
-            "options": {
-                "device": "/new",
-                "network_key": "new123",
-                "log_level": "info",
-                "emulate_hardware": False,
-            }
-        },
+        {"options": new_addon_options},
     )
     assert client.disconnect.call_count == disconnect_calls
 
@@ -1246,8 +1258,88 @@ async def test_options_addon_running(
 
     assert result["type"] == "create_entry"
     assert entry.data["url"] == "ws://host1:3001"
-    assert entry.data["usb_path"] == "/new"
-    assert entry.data["network_key"] == "new123"
+    assert entry.data["usb_path"] == new_addon_options["device"]
+    assert entry.data["network_key"] == new_addon_options["network_key"]
+    assert entry.data["use_addon"] is True
+    assert entry.data["integration_created_addon"] is False
+    assert client.connect.call_count == 2
+    assert client.disconnect.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "discovery_info, entry_data, old_addon_options, new_addon_options",
+    [
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {},
+            {
+                "device": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            {
+                "usb_path": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+        ),
+    ],
+)
+async def test_options_addon_running_no_changes(
+    hass,
+    client,
+    supervisor,
+    integration,
+    addon_running,
+    addon_options,
+    set_addon_options,
+    restart_addon,
+    get_addon_discovery_info,
+    discovery_info,
+    entry_data,
+    old_addon_options,
+    new_addon_options,
+):
+    """Test options flow without changes, and add-on already running on Supervisor."""
+    addon_options.update(old_addon_options)
+    entry = integration
+    entry.unique_id = 1234
+    data = {**entry.data, **entry_data}
+    hass.config_entries.async_update_entry(entry, data=data)
+
+    assert entry.data["url"] == "ws://test.org"
+
+    assert client.connect.call_count == 1
+    assert client.disconnect.call_count == 0
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "on_supervisor"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"use_addon": True}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "configure_addon"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        new_addon_options,
+    )
+    await hass.async_block_till_done()
+
+    new_addon_options["device"] = new_addon_options.pop("usb_path")
+    assert set_addon_options.call_count == 0
+    assert restart_addon.call_count == 0
+
+    assert result["type"] == "create_entry"
+    assert entry.data["url"] == "ws://host1:3001"
+    assert entry.data["usb_path"] == new_addon_options["device"]
+    assert entry.data["network_key"] == new_addon_options["network_key"]
     assert entry.data["use_addon"] is True
     assert entry.data["integration_created_addon"] is False
     assert client.connect.call_count == 2
