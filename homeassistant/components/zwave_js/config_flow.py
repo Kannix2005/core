@@ -419,7 +419,7 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
             self.original_addon_config = None
             reason = self.revert_reason
             self.revert_reason = None
-            return self.async_abort(reason=reason)
+            return await self.async_revert_addon_config(reason=reason)
 
         if not self.ws_address:
             discovery_info = await self._async_get_addon_discovery_info()
@@ -462,13 +462,9 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
             )
 
         if self.revert_reason or not self.original_addon_config:
-            if (
-                self.config_entry.data.get(CONF_USE_ADDON)
-                and self.config_entry.state == config_entries.ConfigEntryState.LOADED
-            ):
-                self.hass.async_create_task(
-                    self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                )
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            )
             return self.async_abort(reason=reason)
 
         self.revert_reason = reason
