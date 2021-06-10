@@ -112,6 +112,7 @@ class BaseZwaveJSFlow(FlowHandler):
         self.integration_created_addon = False
         self.install_task: asyncio.Task | None = None
         self.start_task: asyncio.Task | None = None
+        self.version_info: VersionInfo | None = None
 
     @property
     @abstractmethod
@@ -175,6 +176,7 @@ class BaseZwaveJSFlow(FlowHandler):
     async def _async_start_addon(self) -> None:
         """Start the Z-Wave JS add-on."""
         addon_manager: AddonManager = get_addon_manager(self.hass)
+        self.version_info = None
         try:
             if self.restart_addon:
                 await addon_manager.async_schedule_restart_addon()
@@ -189,7 +191,9 @@ class BaseZwaveJSFlow(FlowHandler):
                         self.ws_address = (
                             f"ws://{discovery_info['host']}:{discovery_info['port']}"
                         )
-                    await async_get_version_info(self.hass, self.ws_address)
+                    self.version_info = await async_get_version_info(
+                        self.hass, self.ws_address
+                    )
                 except (AbortFlow, CannotConnect) as err:
                     _LOGGER.debug(
                         "Add-on not ready yet, waiting %s seconds: %s",
@@ -437,12 +441,15 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
             discovery_info = await self._async_get_addon_discovery_info()
             self.ws_address = f"ws://{discovery_info['host']}:{discovery_info['port']}"
 
-        try:
-            version_info = await async_get_version_info(self.hass, self.ws_address)
-        except CannotConnect:
-            return await self.async_revert_addon_config(reason="cannot_connect")
+        if not self.version_info:
+            try:
+                self.version_info = await async_get_version_info(
+                    self.hass, self.ws_address
+                )
+            except CannotConnect:
+                return await self.async_revert_addon_config(reason="cannot_connect")
 
-        if self.config_entry.unique_id != version_info.home_id:
+        if self.config_entry.unique_id != self.version_info.home_id:
             return await self.async_revert_addon_config(reason="different_device")
 
         self._async_update_entry(
@@ -658,12 +665,16 @@ class ConfigFlow(BaseZwaveJSFlow, config_entries.ConfigFlow, domain=DOMAIN):
             self.ws_address = f"ws://{discovery_info['host']}:{discovery_info['port']}"
 
         if not self.unique_id:
-            try:
-                version_info = await async_get_version_info(self.hass, self.ws_address)
-            except CannotConnect as err:
-                raise AbortFlow("cannot_connect") from err
+            if not self.version_info:
+                try:
+                    self.version_info = await async_get_version_info(
+                        self.hass, self.ws_address
+                    )
+                except CannotConnect as err:
+                    raise AbortFlow("cannot_connect") from err
+
             await self.async_set_unique_id(
-                version_info.home_id, raise_on_progress=False
+                self.version_info.home_id, raise_on_progress=False
             )
 
         self._abort_if_unique_id_configured(
