@@ -124,10 +124,12 @@ class BaseZwaveJSFlow(FlowHandler):
         try:
             await self.install_task
         except AddonError as err:
+            self.install_task = None
             _LOGGER.error(err)
             return self.async_show_progress_done(next_step_id="install_failed")
 
         self.integration_created_addon = True
+        self.install_task = None
 
         return self.async_show_progress_done(next_step_id="configure_addon")
 
@@ -150,9 +152,11 @@ class BaseZwaveJSFlow(FlowHandler):
         try:
             await self.start_task
         except (CannotConnect, AddonError, AbortFlow) as err:
+            self.start_task = None
             _LOGGER.error(err)
             return self.async_show_progress_done(next_step_id="start_failed")
 
+        self.start_task = None
         return self.async_show_progress_done(next_step_id="finish_addon_setup")
 
     async def async_step_start_failed(
