@@ -1471,6 +1471,139 @@ async def test_options_different_device(
 
 
 @pytest.mark.parametrize(
+    "discovery_info, entry_data, old_addon_options, new_addon_options, disconnect_calls, restart_addon_side_effect",
+    [
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {},
+            {
+                "device": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            {
+                "usb_path": "/new",
+                "network_key": "new123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            0,
+            [HassioAPIError(), None],
+        ),
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {},
+            {
+                "device": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            {
+                "usb_path": "/new",
+                "network_key": "new123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            0,
+            [
+                HassioAPIError(),
+                HassioAPIError(),
+            ],
+        ),
+    ],
+)
+async def test_options_addon_restart_failed(
+    hass,
+    client,
+    supervisor,
+    integration,
+    addon_running,
+    addon_options,
+    set_addon_options,
+    restart_addon,
+    get_addon_discovery_info,
+    discovery_info,
+    entry_data,
+    old_addon_options,
+    new_addon_options,
+    disconnect_calls,
+    restart_addon_side_effect,
+):
+    """Test options flow and add-on restart failure."""
+    addon_options.update(old_addon_options)
+    entry = integration
+    entry.unique_id = 1234
+    data = {**entry.data, **entry_data}
+    hass.config_entries.async_update_entry(entry, data=data)
+
+    assert entry.data["url"] == "ws://test.org"
+
+    assert client.connect.call_count == 1
+    assert client.disconnect.call_count == 0
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "on_supervisor"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"use_addon": True}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "configure_addon"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        new_addon_options,
+    )
+
+    assert set_addon_options.call_count == 1
+    new_addon_options["device"] = new_addon_options.pop("usb_path")
+    assert set_addon_options.call_args == call(
+        hass,
+        "core_zwave_js",
+        {"options": new_addon_options},
+    )
+    assert client.disconnect.call_count == disconnect_calls
+    assert result["type"] == "progress"
+    assert result["step_id"] == "start_addon"
+
+    await hass.async_block_till_done()
+
+    assert restart_addon.call_count == 1
+    assert restart_addon.call_args == call(hass, "core_zwave_js")
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"])
+    await hass.async_block_till_done()
+
+    assert set_addon_options.call_count == 2
+    assert set_addon_options.call_args == call(
+        hass,
+        "core_zwave_js",
+        {"options": old_addon_options},
+    )
+    assert result["type"] == "progress"
+    assert result["step_id"] == "start_addon"
+
+    await hass.async_block_till_done()
+
+    assert restart_addon.call_count == 2
+    assert restart_addon.call_args == call(hass, "core_zwave_js")
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"])
+    await hass.async_block_till_done()
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "addon_start_failed"
+    assert entry.data == data
+    assert client.connect.call_count == 2
+    assert client.disconnect.call_count == 1
+
+
+@pytest.mark.parametrize(
     "discovery_info, entry_data, old_addon_options, new_addon_options, disconnect_calls, server_version_side_effect",
     [
         (
