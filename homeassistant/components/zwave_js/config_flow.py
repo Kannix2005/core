@@ -384,7 +384,8 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
             }
 
             if new_addon_config != addon_config:
-                self.restart_addon = True
+                if addon_info.state == AddonState.RUNNING:
+                    self.restart_addon = True
                 # Copy the add-on config to keep the objects separate.
                 self.original_addon_config = dict(addon_config)
                 await self._async_set_addon_config(new_addon_config)
