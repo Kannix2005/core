@@ -62,7 +62,12 @@ def mock_addon_options(addon_info):
 @pytest.fixture(name="set_addon_options_side_effect")
 def set_addon_options_side_effect_fixture(addon_options):
     """Return the set add-on options side effect."""
-    return lambda hass, slug, options: addon_options.update(options["options"])
+
+    async def set_addon_options(hass, slug, options):
+        """Mock set add-on options."""
+        addon_options.update(options["options"])
+
+    return set_addon_options
 
 
 @pytest.fixture(name="set_addon_options")
@@ -75,11 +80,24 @@ def mock_set_addon_options(set_addon_options_side_effect):
         yield set_options
 
 
+@pytest.fixture(name="install_addon_side_effect")
+def install_addon_side_effect_fixture(addon_info):
+    """Return the install add-on side effect."""
+
+    async def install_addon(hass, slug):
+        """Mock install add-on."""
+        addon_info.return_value["state"] = "stopped"
+        addon_info.return_value["version"] = "1.0"
+
+    return install_addon
+
+
 @pytest.fixture(name="install_addon")
-def mock_install_addon():
+def mock_install_addon(install_addon_side_effect):
     """Mock install add-on."""
     with patch(
-        "homeassistant.components.zwave_js.addon.async_install_addon"
+        "homeassistant.components.zwave_js.addon.async_install_addon",
+        side_effect=install_addon_side_effect,
     ) as install_addon:
         yield install_addon
 
@@ -94,9 +112,14 @@ def mock_update_addon():
 
 
 @pytest.fixture(name="start_addon_side_effect")
-def start_addon_side_effect_fixture():
+def start_addon_side_effect_fixture(addon_info):
     """Return the start add-on options side effect."""
-    return None
+
+    async def start_addon(hass, slug):
+        """Mock start add-on."""
+        addon_info.return_value["state"] = "started"
+
+    return start_addon
 
 
 @pytest.fixture(name="start_addon")
