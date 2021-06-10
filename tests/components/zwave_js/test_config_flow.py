@@ -2,6 +2,7 @@
 import asyncio
 from unittest.mock import DEFAULT, call, patch
 
+import aiohttp
 import pytest
 from zwave_js_server.version import VersionInfo
 
@@ -1464,6 +1465,83 @@ async def test_options_different_device(
 
     assert result["type"] == "abort"
     assert result["reason"] == "different_device"
+    assert entry.data == data
+    assert client.connect.call_count == 2
+    assert client.disconnect.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "discovery_info, entry_data, old_addon_options, new_addon_options, disconnect_calls, server_version_side_effect",
+    [
+        (
+            {"config": ADDON_DISCOVERY_INFO},
+            {},
+            {
+                "device": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            {
+                "usb_path": "/test",
+                "network_key": "abc123",
+                "log_level": "info",
+                "emulate_hardware": False,
+            },
+            0,
+            aiohttp.ClientError("Boom"),
+        ),
+    ],
+)
+async def test_options_addon_running_server_info_failure(
+    hass,
+    client,
+    supervisor,
+    integration,
+    addon_running,
+    addon_options,
+    set_addon_options,
+    restart_addon,
+    get_addon_discovery_info,
+    discovery_info,
+    entry_data,
+    old_addon_options,
+    new_addon_options,
+    disconnect_calls,
+    server_version_side_effect,
+):
+    """Test options flow and add-on already running with server info failure."""
+    addon_options.update(old_addon_options)
+    entry = integration
+    entry.unique_id = 1234
+    data = {**entry.data, **entry_data}
+    hass.config_entries.async_update_entry(entry, data=data)
+
+    assert entry.data["url"] == "ws://test.org"
+
+    assert client.connect.call_count == 1
+    assert client.disconnect.call_count == 0
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "on_supervisor"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"use_addon": True}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "configure_addon"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        new_addon_options,
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "cannot_connect"
     assert entry.data == data
     assert client.connect.call_count == 2
     assert client.disconnect.call_count == 1
