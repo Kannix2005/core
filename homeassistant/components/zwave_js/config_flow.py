@@ -48,6 +48,13 @@ CONF_EMULATE_HARDWARE = "emulate_hardware"
 CONF_LOG_LEVEL = "log_level"
 SERVER_VERSION_TIMEOUT = 10
 
+ADDON_USER_INPUT_MAP = {
+    CONF_ADDON_DEVICE: CONF_USB_PATH,
+    CONF_ADDON_NETWORK_KEY: CONF_NETWORK_KEY,
+    CONF_ADDON_LOG_LEVEL: CONF_LOG_LEVEL,
+    CONF_ADDON_EMULATE_HARDWARE: CONF_EMULATE_HARDWARE,
+}
+
 ON_SUPERVISOR_SCHEMA = vol.Schema({vol.Optional(CONF_USE_ADDON, default=True): bool})
 
 
@@ -374,7 +381,8 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
 
             if new_addon_config != addon_config:
                 self.restart_addon = True
-                self.original_addon_config = addon_config
+                # Copy the add-on config to keep the objects separate.
+                self.original_addon_config = dict(addon_config)
                 await self._async_set_addon_config(new_addon_config)
 
             if addon_info.state == AddonState.RUNNING and not self.restart_addon:
@@ -473,12 +481,8 @@ class OptionsFlowHandler(BaseZwaveJSFlow, config_entries.OptionsFlow):
 
         self.revert_reason = reason
         addon_config_input = {
-            CONF_USB_PATH: self.original_addon_config[CONF_ADDON_DEVICE],
-            CONF_NETWORK_KEY: self.original_addon_config[CONF_ADDON_NETWORK_KEY],
-            CONF_LOG_LEVEL: self.original_addon_config[CONF_ADDON_LOG_LEVEL],
-            CONF_EMULATE_HARDWARE: self.original_addon_config[
-                CONF_ADDON_EMULATE_HARDWARE
-            ],
+            ADDON_USER_INPUT_MAP[addon_key]: addon_val
+            for addon_key, addon_val in self.original_addon_config.items()
         }
         _LOGGER.debug("Reverting add-on options, reason: %s", reason)
         return await self.async_step_configure_addon(addon_config_input)
